@@ -1,0 +1,6 @@
+{
+  "name": "E-Logbook BPS Kota Parepare (7372)",
+  "description": "Sistem Informasi Logbook Kinerja Harian dan Laporan Kegiatan Pegawai BPS Kota Parepare (Satker 7372) terintegrasi dengan akun 7372parepare@gmail.com.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  letter-spacing: -0.011em;
+
+  /* Theme tokens */
+  --theme-primary: #003B73;
+  --theme-primary-hover: #002B49;
+  --theme-accent: #0066FF;
+  --theme-accent-hover: #0052CC;
+  --theme-header-bg: #002B49;
+
+  /* Ambient light grid */
+  --grid-line-color: rgba(100, 116, 139, 0.14);
+  --bg-page: #F8FAFC;
+  --text-primary: #0F172A;
+}
+
+html.dark {
+  /* Ambient dark grid */
+  --grid-line-color: rgba(255, 255, 255, 0.055);
+  --bg-page: #090D16;
+  --text-primary: #F8FAFC;
+  color-scheme: dark;
+}
+
+body {
+  font-family: inherit;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Background Grid Pattern */
+.bg-grid-ambient {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, var(--grid-line-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line-color) 1px, transparent 1px);
+}
+
+.bg-grid-mask {
+  mask-image: radial-gradient(ellipse at 50% 0%, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.35) 65%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.35) 65%, transparent 100%);
+}
