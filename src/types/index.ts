@@ -18,7 +18,7 @@ export interface FotoLampiran {
 
 export interface LogbookEntry {
   id: string;
-  username: string; // 'ainunnn' | 'ayuazhara' | 'aliyah'
+  username: string; // e.g., 'ainunnn'
   namaPenulis: string;
   tipeLogbook: TipeLogbook; // harian atau mingguan
   tanggal: string; // YYYY-MM-DD
@@ -33,10 +33,28 @@ export interface LogbookEntry {
   fotoDokumentasi: FotoLampiran[];
   linkEviden?: string;
   statusKegiatan: StatusKegiatan; // 'selesai' | 'proses' (pribadi, tanpa approval mentor)
+  isDiluarHariKerja?: boolean; // true jika kegiatan di luar Senin-Jumat / hari libur
+  alasanLuarHariKerja?: string; // keterangan singkat kegiatan luar hari kerja
   isSyncedToSheet: boolean;
   syncedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MagangPeriod {
+  id: number; // 1..6
+  label: string; // e.g., 'Periode 1'
+  shortRange: string; // e.g., '10 Agu – 9 Sep 2026'
+  fullRange: string; // e.g., '10 Agustus – 9 September 2026'
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+}
+
+export interface ReminderSettings {
+  enabled: boolean;
+  time: string; // HH:mm
+  onlyWorkdays: boolean; // Senin-Jumat non-libur
+  lastNotifiedDate?: string; // YYYY-MM-DD
 }
 
 export interface AppUser {
@@ -45,7 +63,6 @@ export interface AppUser {
   name: string;
   role: UserRole;
   email: string;
-  idPeserta: string;
   institusiAsal: string;
   jurusan: string;
   avatarUrl?: string;
@@ -55,7 +72,6 @@ export interface AppUser {
 export interface PesertaProfile {
   username: string;
   nama: string;
-  idPeserta: string;
   email: string;
   perusahaan: string;
   posisiMagang: string;
@@ -90,7 +106,6 @@ export interface AuthUser {
   email: string;
   name: string;
   role: UserRole;
-  idPeserta: string;
   token?: string;
   loginTime: string;
 }

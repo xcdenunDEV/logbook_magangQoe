@@ -3,9 +3,63 @@ import { INITIAL_USERS } from '../data/initialData';
 
 const SESSION_KEY = 'maganghub_auth_session';
 const USERS_STORAGE_KEY = 'maganghub_registered_users';
+const USERS_MIGRATION_KEY = 'maganghub_users_only_ainun_v1';
 
 export class AuthService {
+  private static runMigrationIfNeeded(): void {
+    try {
+      if (localStorage.getItem(USERS_MIGRATION_KEY)) return;
+
+      const rawUsers = localStorage.getItem(USERS_STORAGE_KEY);
+      if (rawUsers) {
+        const parsed = JSON.parse(rawUsers);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed
+            .filter((u: any) => {
+              const uname = String(u?.username || '').toLowerCase();
+              return uname !== 'ayuazhara' && uname !== 'aliyah';
+            })
+            .map((u: any) => {
+              const { idPeserta: _removed, ...rest } = u;
+              if (String(rest.username || '').toLowerCase() === 'ainunnn') {
+                return {
+                  ...rest,
+                  email: rest.email === 'ainun.anwar@maganghub.kemnaker.go.id' ? '' : (rest.email || ''),
+                  institusiAsal: rest.institusiAsal === 'Universitas Hasanuddin' ? '' : (rest.institusiAsal || ''),
+                  jurusan: rest.jurusan === 'Teknik Informatika & Sistem Informasi' ? '' : (rest.jurusan || '')
+                };
+              }
+              return rest;
+            });
+
+          const finalUsers = cleaned.length > 0 ? cleaned : INITIAL_USERS;
+          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(finalUsers));
+        }
+      }
+
+      const rawSession = localStorage.getItem(SESSION_KEY);
+      if (rawSession) {
+        const parsedSession = JSON.parse(rawSession);
+        const sessionUsername = String(parsedSession?.username || '').toLowerCase();
+        if (sessionUsername === 'ayuazhara' || sessionUsername === 'aliyah') {
+          localStorage.removeItem(SESSION_KEY);
+        } else {
+          const { idPeserta: _removed, ...cleanSession } = parsedSession;
+          if (cleanSession.email === 'ainun.anwar@maganghub.kemnaker.go.id') {
+            cleanSession.email = '';
+          }
+          localStorage.setItem(SESSION_KEY, JSON.stringify(cleanSession));
+        }
+      }
+
+      localStorage.setItem(USERS_MIGRATION_KEY, 'done');
+    } catch (e) {
+      console.error('Error migrating users storage', e);
+    }
+  }
+
   static getUsers(): AppUser[] {
+    this.runMigrationIfNeeded();
     try {
       const data = localStorage.getItem(USERS_STORAGE_KEY);
       if (data) {
@@ -30,6 +84,7 @@ export class AuthService {
   }
 
   static getCurrentUser(): AuthUser | null {
+    this.runMigrationIfNeeded();
     try {
       const session = localStorage.getItem(SESSION_KEY);
       if (session) {
@@ -46,7 +101,9 @@ export class AuthService {
     const cleanInput = usernameOrEmail.trim().toLowerCase();
 
     const matched = users.find(
-      u => (u.username.toLowerCase() === cleanInput || u.email.toLowerCase() === cleanInput) && u.password === password
+      u =>
+        (u.username.toLowerCase() === cleanInput || (u.email && u.email.toLowerCase() === cleanInput)) &&
+        u.password === password
     );
 
     if (matched) {
@@ -55,7 +112,6 @@ export class AuthService {
         email: matched.email,
         name: matched.name,
         role: matched.role,
-        idPeserta: matched.idPeserta,
         token: `token-mh-${Date.now()}`,
         loginTime: new Date().toISOString()
       };

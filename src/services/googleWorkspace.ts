@@ -1,5 +1,5 @@
 import { LogbookEntry, PesertaProfile } from '../types';
-import { formatIndonesianDate, formatDuration } from '../utils/dateUtils';
+import { formatDateDDMMYYYY, formatIndonesianDate, formatDuration } from '../utils/dateUtils';
 
 export class GoogleWorkspaceService {
   /**
@@ -33,8 +33,8 @@ export class GoogleWorkspaceService {
       };
 
       const periode = entry.tipeLogbook === 'mingguan'
-        ? `${entry.tanggal} s.d. ${entry.tanggalSelesai || '-'}`
-        : entry.tanggal;
+        ? `${formatDateDDMMYYYY(entry.tanggal)} s.d. ${formatDateDDMMYYYY(entry.tanggalSelesai || entry.tanggal)}`
+        : formatDateDDMMYYYY(entry.tanggal);
 
       return [
         idx + 1,
@@ -67,7 +67,7 @@ export class GoogleWorkspaceService {
     link.setAttribute('href', url);
     link.setAttribute(
       'download',
-      filename || `Logbook_MagangHub_Kemnaker_${profile.nama.replace(/\s+/g, '_')}.csv`
+      filename || `Portofolio_Logbook_${(profile.nama || 'Peserta').replace(/\s+/g, '_')}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -76,23 +76,29 @@ export class GoogleWorkspaceService {
   }
 
   static copyFormattedSummary(entries: LogbookEntry[], profile: PesertaProfile, periodTitle: string): string {
-    let text = `*LAPORAN AKTIVITAS MAGANGHUB KEMNAKER*\n`;
-    text += `*Program Pemagangan Nasional*\n`;
-    text += `Nama Peserta: ${profile.nama} (${profile.idPeserta})\n`;
-    text += `Perusahaan Mitra: ${profile.perusahaan}\n`;
-    text += `Posisi: ${profile.posisiMagang}\n`;
+    let text = `*PORTOFOLIO & LOGBOOK AKTIVITAS MAGANG*\n`;
+    text += `Nama Peserta: ${profile.nama || profile.username || '-'}\n`;
+    text += `Lokasi Magang: ${profile.perusahaan || '-'}\n`;
+    if (profile.posisiMagang) {
+      text += `Posisi: ${profile.posisiMagang}${profile.divisi ? ` (${profile.divisi})` : ''}\n`;
+    }
+    if (profile.institusiAsal) {
+      text += `Institusi Asal: ${profile.institusiAsal}${profile.jurusan ? ` - ${profile.jurusan}` : ''}\n`;
+    }
     text += `Periode: ${periodTitle}\n`;
     text += `-------------------------------------------\n\n`;
 
     entries.forEach((e, i) => {
-      const periode = e.tipeLogbook === 'mingguan' ? `${e.tanggal} s.d. ${e.tanggalSelesai || '-'}` : e.tanggal;
-      text += `${i + 1}. [${periode} | ${e.jamMulai || ''} - ${e.jamSelesai || ''}]\n`;
-      text += `   • Tipe: ${e.tipeLogbook.toUpperCase()}\n`;
+      const periode = e.tipeLogbook === 'mingguan'
+        ? `${formatDateDDMMYYYY(e.tanggal)} s.d. ${formatDateDDMMYYYY(e.tanggalSelesai || e.tanggal)}`
+        : formatIndonesianDate(e.tanggal, true);
+      text += `${i + 1}. [${periode} | ${e.jamMulai || '07:30'} - ${e.jamSelesai || '16:00'}]\n`;
+      text += `   • Tipe: ${e.tipeLogbook.toUpperCase()}${e.isDiluarHariKerja ? ' (Luar Hari Kerja)' : ''}\n`;
       text += `   • Kategori: ${e.kategori}\n`;
       text += `   • Uraian: ${e.uraianAktivitas}\n`;
-      text += `   • Pembelajaran: ${e.pelajaranDiperoleh}\n`;
-      text += `   • Kendala: ${e.kendalaDihadapi}\n`;
-      text += `   • Foto Lampiran: ${e.fotoDokumentasi?.length || 0} foto\n`;
+      text += `   • Pembelajaran: ${e.pelajaranDiperoleh || '-'}\n`;
+      text += `   • Kendala: ${e.kendalaDihadapi || '-'}\n`;
+      text += `   • Foto Lampiran: ${e.fotoDokumentasi?.length ? `${e.fotoDokumentasi.length} foto` : 'Tidak ada foto'}\n`;
       if (e.linkEviden) {
         text += `   • Eviden: ${e.linkEviden}\n`;
       }

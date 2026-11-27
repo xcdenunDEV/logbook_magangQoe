@@ -106,16 +106,21 @@ export const LogbookDetailModal: React.FC<LogbookDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Kategori */}
-          <div className="flex items-center gap-2">
+          {/* Kategori & Status Hari Kerja */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-slate-500 font-semibold">Kategori:</span>
             <span className="px-2.5 py-0.5 rounded-md font-bold text-sky-900 bg-sky-50 border border-sky-200">
               {entry.kategori}
             </span>
-            <span className="text-slate-500 font-semibold ml-2">Status:</span>
+            <span className="text-slate-500 font-semibold ml-1">Status:</span>
             <span className="px-2 py-0.5 rounded font-bold capitalize bg-slate-100 text-slate-800">
               {entry.statusKegiatan}
             </span>
+            {entry.isDiluarHariKerja && (
+              <span className="px-2.5 py-0.5 rounded-md font-bold text-amber-800 bg-amber-50 border border-amber-200">
+                Kegiatan di Luar Hari Kerja{entry.alasanLuarHariKerja ? `: ${entry.alasanLuarHariKerja}` : ''}
+              </span>
+            )}
           </div>
 
           {/* 1. Uraian Aktivitas */}

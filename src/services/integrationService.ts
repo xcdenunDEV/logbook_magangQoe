@@ -1,6 +1,6 @@
 import { AdminIntegrationConfig, LogbookEntry } from '../types';
 import { INITIAL_INTEGRATION_CONFIG } from '../data/initialData';
-import { formatDuration, formatIndonesianDate } from '../utils/dateUtils';
+import { formatDateDDMMYYYY, formatDuration, formatIndonesianDate } from '../utils/dateUtils';
 import { getAccessToken, googleSignIn } from './firebaseAuth';
 import { GoogleWorkspaceApi } from './googleWorkspaceApi';
 
@@ -30,13 +30,19 @@ export class IntegrationService {
 
   /**
    * Syncs logbook entries to the configured Google Sheet via official Google Sheets API.
-   * Prompts authentication if needed, creates a spreadsheet if missing, and appends the rows.
+   * - mode = 'full': cleanly rewrites deduplicated rows so repeated sync clicks never create duplicates.
+   * - mode = 'upsert': updates matching row by ID Logbook in-place or appends once if new.
    */
-  static async syncEntriesToGoogleSheet(entries: LogbookEntry[]): Promise<{
+  static async syncEntriesToGoogleSheet(
+    entries: LogbookEntry[],
+    mode: 'full' | 'upsert' = 'full',
+    interactiveAuth = true
+  ): Promise<{
     success: boolean;
     syncedCount: number;
     message: string;
     spreadsheetUrl?: string;
+    skippedAuth?: boolean;
   }> {
     const config = this.getConfig();
 
@@ -48,9 +54,17 @@ export class IntegrationService {
       };
     }
 
-    // 1. Get or prompt Google OAuth access token
+    // 1. Get or (only when explicitly triggered by user) prompt Google OAuth access token
     let accessToken = await getAccessToken();
     if (!accessToken) {
+      if (!interactiveAuth) {
+        return {
+          success: false,
+          syncedCount: 0,
+          skippedAuth: true,
+          message: ''
+        };
+      }
       try {
         const authRes = await googleSignIn();
         if (authRes?.accessToken) {
@@ -81,7 +95,7 @@ export class IntegrationService {
       try {
         const created = await GoogleWorkspaceApi.createMagangHubSpreadsheet(
           accessToken,
-          'MagangHub Kemnaker - Rekap Logbook Pemagangan'
+          'Rekap Logbook Aktivitas Magang'
         );
         sheetId = created.spreadsheetId;
         const updatedConfig: AdminIntegrationConfig = {
@@ -100,14 +114,15 @@ export class IntegrationService {
       }
     }
 
-    // 3. Write rows to Google Sheet via Google Sheets API
+    // 3. Write rows to Google Sheet via Google Sheets API (duplicate-free)
     try {
       const activeConfig = this.getConfig();
       const apiRes = await GoogleWorkspaceApi.syncEntriesDirectlyToSheet(
         accessToken,
         sheetId,
         activeConfig.sheetTabName || 'Rekap Logbook Magang',
-        entries
+        entries,
+        mode
       );
 
       activeConfig.lastGlobalSync = new Date().toISOString();
@@ -209,7 +224,7 @@ export class IntegrationService {
 
     const rows = entries.map((item, index) => {
       const periodeStr = item.tipeLogbook === 'mingguan'
-        ? `${item.tanggal} s.d. ${item.tanggalSelesai || '-'}`
+        ? `${formatDateDDMMYYYY(item.tanggal)} s.d. ${formatDateDDMMYYYY(item.tanggalSelesai || item.tanggal)}`
         : `${formatIndonesianDate(item.tanggal, false)} (${item.jamMulai || '-'} - ${item.jamSelesai || '-'})`;
 
       const cleanText = (str?: string) => (str ? str.replace(/\r?\n|\r/g, ' ').replace(/\t/g, ' ') : '-');

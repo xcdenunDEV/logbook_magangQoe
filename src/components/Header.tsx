@@ -2,37 +2,45 @@ import React from 'react';
 import { 
   BookOpen, 
   BarChart3, 
+  Calendar,
   Plus, 
   GraduationCap
 } from 'lucide-react';
-import { AuthUser, PesertaProfile } from '../types';
+import { AuthUser, LogbookEntry, PesertaProfile, ReminderSettings } from '../types';
 import UserAuthButton from './UserAuthButton';
 import ThemeSwitcher from './ThemeSwitcher';
+import NotificationBell from './NotificationBell';
 
 interface HeaderProps {
-  activeView: 'logbook' | 'rekap';
-  onSelectView: (view: 'logbook' | 'rekap') => void;
+  activeView: 'logbook' | 'kalender' | 'rekap';
+  onSelectView: (view: 'logbook' | 'kalender' | 'rekap') => void;
   onOpenNewLogbook: () => void;
-  onOpenAIChat: () => void;
   onOpenSettings: () => void;
   onOpenAdminSettings?: () => void;
   profile: PesertaProfile;
   currentUser: AuthUser | null;
   onLogout: () => void;
   onThemeChanged?: () => void;
+  entries: LogbookEntry[];
+  reminderSettings: ReminderSettings;
+  onUpdateReminderSettings: (next: ReminderSettings) => void;
+  onNotifyFeedback?: (msg: string, type?: 'success' | 'info' | 'error') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeView,
   onSelectView,
   onOpenNewLogbook,
-  onOpenAIChat,
   onOpenSettings,
   onOpenAdminSettings,
   profile,
   currentUser,
   onLogout,
-  onThemeChanged
+  onThemeChanged,
+  entries,
+  reminderSettings,
+  onUpdateReminderSettings,
+  onNotifyFeedback
 }) => {
   const isAdmin = currentUser?.role === 'admin';
 
@@ -56,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="text-slate-300 text-[11px]">
-            Mitra: <strong className="text-white font-semibold">{profile.perusahaan}</strong>
+            Lokasi: <strong className="text-white font-semibold">{profile.perusahaan}</strong>
           </div>
         </div>
       </div>
@@ -99,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
           <nav className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
             <button
               onClick={() => onSelectView('logbook')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                 activeView === 'logbook'
                   ? 'text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -111,8 +119,21 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
+              onClick={() => onSelectView('kalender')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                activeView === 'kalender'
+                  ? 'text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              style={activeView === 'kalender' ? { backgroundColor: 'var(--theme-primary)' } : undefined}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Kalender Periode</span>
+            </button>
+
+            <button
               onClick={() => onSelectView('rekap')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                 activeView === 'rekap'
                   ? 'text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -126,6 +147,15 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Buttons */}
           <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Daily Logbook Reminder Bell */}
+            <NotificationBell
+              entries={entries}
+              settings={reminderSettings}
+              onUpdateSettings={onUpdateReminderSettings}
+              onOpenNewLogbookToday={onOpenNewLogbook}
+              onNotifyFeedback={onNotifyFeedback}
+            />
+
             {/* Theme Switcher: Dark Mode & Color Presets */}
             <ThemeSwitcher onThemeChanged={onThemeChanged} />
 
@@ -145,17 +175,16 @@ export const Header: React.FC<HeaderProps> = ({
               onLogout={onLogout}
               onOpenSettings={onOpenSettings}
               onOpenAdminSettings={isAdmin ? onOpenAdminSettings : undefined}
-              onOpenAIChat={onOpenAIChat}
             />
           </div>
         </div>
 
         {/* Mobile Navigation Tabs */}
         <div className="flex md:hidden pb-3 pt-1">
-          <nav className="w-full flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <nav className="w-full flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-0.5">
             <button
               onClick={() => onSelectView('logbook')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
                 activeView === 'logbook'
                   ? 'text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
@@ -167,8 +196,21 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
+              onClick={() => onSelectView('kalender')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
+                activeView === 'kalender'
+                  ? 'text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+              style={activeView === 'kalender' ? { backgroundColor: 'var(--theme-primary)' } : undefined}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Kalender</span>
+            </button>
+
+            <button
               onClick={() => onSelectView('rekap')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${
                 activeView === 'rekap'
                   ? 'text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400'
@@ -176,7 +218,7 @@ export const Header: React.FC<HeaderProps> = ({
               style={activeView === 'rekap' ? { backgroundColor: 'var(--theme-primary)' } : undefined}
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>Rekap & Laporan</span>
+              <span>Rekap</span>
             </button>
           </nav>
         </div>

@@ -25,6 +25,7 @@ import { User as FirebaseUser } from 'firebase/auth';
 import { AdminIntegrationConfig, AppUser, AuthUser, LogbookEntry } from '../types';
 import { IntegrationService } from '../services/integrationService';
 import { AuthService } from '../services/authService';
+import { UserService } from '../services/userService';
 import { GoogleWorkspaceApi } from '../services/googleWorkspaceApi';
 import { googleSignIn, initAuth, logoutGoogle, getAccessToken } from '../services/firebaseAuth';
 
@@ -83,8 +84,8 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
     password: 'password123',
     role: 'user',
     email: '',
-    institusiAsal: 'Universitas Hasanuddin',
-    jurusan: 'Sistem Informasi'
+    institusiAsal: '',
+    jurusan: ''
   });
   const [userMessage, setUserMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -302,7 +303,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
 
     // Explicit confirmation dialog before modifying Google Spreadsheet (Workspace requirement)
     const confirmed = window.confirm(
-      `Konfirmasi Sinkronisasi:\n\nApakah Anda ingin mengirimkan ${entries.length} data catatan logbook ke spreadsheet "${config.sheetTabName || 'Rekap Logbook Magang'}"?\n\nData baru akan ditambahkan langsung ke spreadsheet Google Anda.`
+      `Konfirmasi Sinkronisasi:\n\nApakah Anda ingin menyinkronkan ${entries.length} data catatan logbook ke spreadsheet "${config.sheetTabName || 'Rekap Logbook Magang'}"?\n\nSinkronisasi dilakukan tanpa duplikat (data yang sama tidak akan digandakan).`
     );
     if (!confirmed) return;
 
@@ -313,9 +314,11 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         token,
         sheetId,
         config.sheetTabName || 'Rekap Logbook Magang',
-        entries
+        entries,
+        'full'
       );
-      onSyncAll();
+      UserService.markEntriesAsSynced(entries.map(e => e.id));
+      onUsersUpdated();
       setSetupFeedback({
         type: 'success',
         message: `${res.message} Seluruh data logbook telah berhasil disinkronkan ke Google Sheet!`
@@ -409,8 +412,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
         name: userFormState.name!.trim(),
         password: userFormState.password || 'password123',
         role: userFormState.role || 'user',
-        email: userFormState.email || `${userFormState.username}@maganghub.kemnaker.go.id`,
-        idPeserta: `MH-2026-USR${Date.now().toString().slice(-4)}`,
+        email: userFormState.email || '',
         institusiAsal: userFormState.institusiAsal || '',
         jurusan: userFormState.jurusan || '',
         createdAt: new Date().toISOString()
@@ -442,13 +444,19 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 dark:bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+      onClick={onClose}
+    >
       <div 
-        className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6"
+        className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#002B49] text-white px-6 py-4 flex items-center justify-between">
+        <div
+          className="text-white px-6 py-4 flex items-center justify-between"
+          style={{ backgroundColor: 'var(--theme-header-bg)' }}
+        >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-xs">
               <ShieldCheck className="w-5 h-5" />
@@ -467,7 +475,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -1131,7 +1139,7 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
               <ul className="space-y-1.5 text-slate-600 text-[11px]">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-600 font-bold">✓</span>
-                  <span><strong>Akun Login Terjaga:</strong> User <code className="bg-slate-100 px-1 rounded text-slate-800">ainunnn</code>, <code className="bg-slate-100 px-1 rounded text-slate-800">ayuazhara</code>, <code className="bg-slate-100 px-1 rounded text-slate-800">aliyah</code>, serta user tambahan tetap bisa login seperti biasa.</span>
+                  <span><strong>Akun Login Terjaga:</strong> User <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-slate-800 dark:text-slate-200">ainunnn</code> serta user tambahan tetap bisa login seperti biasa.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-600 font-bold">✓</span>

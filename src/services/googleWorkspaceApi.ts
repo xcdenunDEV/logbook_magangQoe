@@ -1,5 +1,5 @@
 import { LogbookEntry } from '../types';
-import { formatIndonesianDate } from '../utils/dateUtils';
+import { formatDateDDMMYYYY, formatIndonesianDate } from '../utils/dateUtils';
 
 export class GoogleWorkspaceApi {
   /**
@@ -26,12 +26,54 @@ export class GoogleWorkspaceApi {
     return urlOrId.trim();
   }
 
+  private static readonly SHEET_HEADERS = [
+    'No',
+    'Tanggal & Waktu',
+    'Tipe Logbook',
+    'Nama Peserta',
+    'Username',
+    'Kategori Aktivitas',
+    'Uraian Aktivitas',
+    'Pelajaran Diperoleh',
+    'Kendala Dihadapi & Solusi',
+    'Jumlah Foto',
+    'Status Kegiatan',
+    'Waktu Sinkronisasi',
+    'ID Logbook'
+  ];
+
+  private static formatEntryRow(item: LogbookEntry, rowNo: number): (string | number)[] {
+    const periodeStr = item.tipeLogbook === 'mingguan'
+      ? `${formatDateDDMMYYYY(item.tanggal)} s.d. ${formatDateDDMMYYYY(item.tanggalSelesai || item.tanggal)}`
+      : `${formatIndonesianDate(item.tanggal, true)} (${item.jamMulai || '07:30'} - ${item.jamSelesai || '16:00'})`;
+
+    const statusLabel = item.isDiluarHariKerja
+      ? `${item.statusKegiatan} (Luar Hari Kerja)`
+      : item.statusKegiatan;
+
+    return [
+      rowNo,
+      periodeStr,
+      item.tipeLogbook,
+      item.namaPenulis,
+      item.username,
+      item.kategori,
+      item.uraianAktivitas,
+      item.pelajaranDiperoleh || '-',
+      item.kendalaDihadapi || '-',
+      item.fotoDokumentasi?.length || 0,
+      statusLabel,
+      new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' }),
+      item.id
+    ];
+  }
+
   /**
-   * Creates a brand new Google Spreadsheet configured with MagangHub official columns
+   * Creates a brand new Google Spreadsheet configured with standard Logbook columns
    */
   static async createMagangHubSpreadsheet(
     accessToken: string,
-    title = 'MagangHub Kemnaker - Rekap Logbook Pemagangan'
+    title = 'Rekap Logbook Aktivitas Magang'
   ): Promise<{
     spreadsheetId: string;
     spreadsheetUrl: string;
@@ -56,20 +98,7 @@ export class GoogleWorkspaceApi {
               startColumn: 0,
               rowData: [
                 {
-                  values: [
-                    { userEnteredValue: { stringValue: 'No' } },
-                    { userEnteredValue: { stringValue: 'Tanggal & Waktu' } },
-                    { userEnteredValue: { stringValue: 'Tipe Logbook' } },
-                    { userEnteredValue: { stringValue: 'Nama Peserta' } },
-                    { userEnteredValue: { stringValue: 'Username' } },
-                    { userEnteredValue: { stringValue: 'Kategori Aktivitas' } },
-                    { userEnteredValue: { stringValue: 'Uraian Aktivitas' } },
-                    { userEnteredValue: { stringValue: 'Pelajaran Diperoleh' } },
-                    { userEnteredValue: { stringValue: 'Kendala Dihadapi & Solusi' } },
-                    { userEnteredValue: { stringValue: 'Jumlah Foto' } },
-                    { userEnteredValue: { stringValue: 'Status Kegiatan' } },
-                    { userEnteredValue: { stringValue: 'Waktu Sinkronisasi' } }
-                  ]
+                  values: this.SHEET_HEADERS.map(h => ({ userEnteredValue: { stringValue: h } }))
                 }
               ]
             }
@@ -108,7 +137,7 @@ export class GoogleWorkspaceApi {
    */
   static async createMagangHubDriveFolder(
     accessToken: string,
-    folderName = 'Dokumentasi Foto MagangHub'
+    folderName = 'Dokumentasi Foto Logbook Magang'
   ): Promise<{
     folderId: string;
     folderUrl: string;
@@ -142,27 +171,11 @@ export class GoogleWorkspaceApi {
     };
   }
 
-  /**
-   * Appends logbook entries directly to the Google Sheet using Sheets API.
-   * Auto-detects sheet tabs, adds headers if missing, and appends the data rows.
-   */
-  static async syncEntriesDirectlyToSheet(
+  private static async resolveTargetTab(
     accessToken: string,
     spreadsheetId: string,
-    preferredTabName: string,
-    entries: LogbookEntry[]
-  ): Promise<{
-    success: boolean;
-    message: string;
-    rowCount: number;
-    spreadsheetUrl: string;
-    tabName: string;
-  }> {
-    if (!spreadsheetId) {
-      throw new Error('Spreadsheet ID tidak valid atau belum diatur.');
-    }
-
-    // 1. Fetch metadata to get actual existing sheet tab names
+    preferredTabName: string
+  ): Promise<string> {
     const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`
@@ -187,151 +200,238 @@ export class GoogleWorkspaceApi {
       throw new Error('Spreadsheet tidak memiliki lembar kerja (worksheet).');
     }
 
-    // Determine target tab name
-    let targetTab = preferredTabName;
     const foundTab = sheetsList.find(s => s.properties.title.toLowerCase() === preferredTabName.toLowerCase());
-
     if (foundTab) {
-      targetTab = foundTab.properties.title;
-    } else {
-      // If preferred tab doesn't exist, try adding it or use the first tab
-      try {
-        const addTabRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      return foundTab.properties.title;
+    }
+
+    try {
+      const addTabRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: preferredTabName,
+                  gridProperties: {
+                    frozenRowCount: 1
+                  }
+                }
+              }
+            }
+          ]
+        })
+      });
+
+      if (addTabRes.ok) {
+        return preferredTabName;
+      }
+    } catch {
+      // Fallback below
+    }
+
+    return sheetsList[0].properties.title;
+  }
+
+  /**
+   * Syncs logbook entries to Google Sheet WITHOUT duplicates.
+   * - mode = 'full': clears existing data rows and writes deduplicated sorted entries cleanly (ideal for "Sync Semua" / auto-sync).
+   * - mode = 'upsert': checks existing rows by ID Logbook (Col M) or fingerprint; updates matching rows in-place and appends only missing entries.
+   */
+  static async syncEntriesDirectlyToSheet(
+    accessToken: string,
+    spreadsheetId: string,
+    preferredTabName: string,
+    entries: LogbookEntry[],
+    mode: 'full' | 'upsert' = 'full'
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rowCount: number;
+    spreadsheetUrl: string;
+    tabName: string;
+  }> {
+    if (!spreadsheetId) {
+      throw new Error('Spreadsheet ID tidak valid atau belum diatur.');
+    }
+
+    // Deduplicate input entries by id
+    const uniqueMap = new Map<string, LogbookEntry>();
+    entries.forEach(item => {
+      if (item?.id) {
+        uniqueMap.set(item.id, item);
+      }
+    });
+    const deduplicatedEntries = Array.from(uniqueMap.values()).sort((a, b) =>
+      a.tanggal.localeCompare(b.tanggal)
+    );
+
+    const targetTab = await this.resolveTargetTab(accessToken, spreadsheetId, preferredTabName);
+    const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+
+    if (mode === 'full') {
+      // Clear A2:Z first so old rows / duplicates / deleted entries are wiped cleanly
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A2:Z:clear`,
+        {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            requests: [
-              {
-                addSheet: {
-                  properties: {
-                    title: preferredTabName,
-                    gridProperties: {
-                      frozenRowCount: 1
-                    }
-                  }
-                }
-              }
-            ]
-          })
-        });
-
-        if (addTabRes.ok) {
-          targetTab = preferredTabName;
-        } else {
-          // Fallback to first existing sheet title
-          targetTab = sheetsList[0].properties.title;
-        }
-      } catch {
-        targetTab = sheetsList[0].properties.title;
-      }
-    }
-
-    // 2. Check if Header row exists
-    try {
-      const headerCheckRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:L1`,
-        {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
+          body: JSON.stringify({})
         }
       );
 
-      if (headerCheckRes.ok) {
-        const headerData = await headerCheckRes.json();
-        // If row 1 is completely empty, insert standard Kemnaker headers
-        if (!headerData.values || headerData.values.length === 0 || !headerData.values[0] || headerData.values[0].length === 0) {
-          await fetch(
-            `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:L1?valueInputOption=USER_ENTERED`,
-            {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                values: [
-                  [
-                    'No',
-                    'Tanggal & Waktu',
-                    'Tipe Logbook',
-                    'Nama Peserta',
-                    'Username',
-                    'Kategori Aktivitas',
-                    'Uraian Aktivitas',
-                    'Pelajaran Diperoleh',
-                    'Kendala Dihadapi & Solusi',
-                    'Jumlah Foto',
-                    'Status Kegiatan',
-                    'Waktu Sinkronisasi'
-                  ]
-                ]
-              })
-            }
-          );
+      const formattedRows = deduplicatedEntries.map((item, idx) =>
+        this.formatEntryRow(item, idx + 1)
+      );
+      const allValues = [this.SHEET_HEADERS, ...formattedRows];
+
+      const putRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:M${allValues.length}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ values: allValues })
         }
+      );
+
+      if (!putRes.ok) {
+        const err = await putRes.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Gagal menyinkronkan data ke Google Sheet (HTTP ${putRes.status})`);
       }
-    } catch (e) {
-      console.warn('Notice checking sheet header:', e);
+
+      return {
+        success: true,
+        message: `Berhasil menyinkronkan ${deduplicatedEntries.length} logbook ke Google Sheet tab "${targetTab}" tanpa duplikat.`,
+        rowCount: deduplicatedEntries.length,
+        spreadsheetUrl,
+        tabName: targetTab
+      };
     }
 
-    // 3. Format rows from entries
-    const rows = entries.map((item, index) => {
-      const periodeStr = item.tipeLogbook === 'mingguan'
-        ? `${item.tanggal} s.d. ${item.tanggalSelesai || '-'}`
-        : `${formatIndonesianDate(item.tanggal, false)} (${item.jamMulai || '-'} - ${item.jamSelesai || '-'})`;
+    // Upsert mode (single / partial sync): ensure header exists, read existing rows, update in-place or append
+    await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:M1?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ values: [this.SHEET_HEADERS] })
+      }
+    );
 
-      return [
-        index + 1,
-        periodeStr,
-        item.tipeLogbook,
-        item.namaPenulis,
-        item.username,
-        item.kategori,
-        item.uraianAktivitas,
-        item.pelajaranDiperoleh || '-',
-        item.kendalaDihadapi || '-',
-        item.fotoDokumentasi?.length || 0,
-        item.statusKegiatan,
-        new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' })
-      ];
+    const existingRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A2:M`,
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      }
+    );
+
+    const existingJson = existingRes.ok ? await existingRes.json().catch(() => ({})) : {};
+    const existingRows: string[][] = Array.isArray(existingJson.values) ? existingJson.values : [];
+
+    // Build lookup map: ID Logbook (col M / index 12) -> sheet row number (2-indexed)
+    // Plus fallback fingerprint (tanggal/periode string + uraian) for legacy sheets
+    const idToRowIndex = new Map<string, number>();
+    const fingerprintToRowIndex = new Map<string, number>();
+
+    existingRows.forEach((row, idx) => {
+      const sheetRowNumber = idx + 2;
+      const rowId = (row[12] || '').trim();
+      const rowPeriode = (row[1] || '').trim();
+      const rowUraian = (row[6] || '').trim();
+      if (rowId) {
+        idToRowIndex.set(rowId, sheetRowNumber);
+      }
+      if (rowPeriode && rowUraian) {
+        fingerprintToRowIndex.set(`${rowPeriode}::${rowUraian}`, sheetRowNumber);
+      }
     });
 
-    // 4. Append values to the spreadsheet
-    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A:L:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-    
-    const res = await fetch(appendUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        values: rows
-      })
-    });
+    let updatedCount = 0;
+    const rowsToAppend: (string | number)[][] = [];
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Gagal mengirim data ke Google Sheet (HTTP ${res.status})`);
+    for (const entry of deduplicatedEntries) {
+      const rowPreview = this.formatEntryRow(entry, 0);
+      const fingerprint = `${String(rowPreview[1]).trim()}::${String(rowPreview[6]).trim()}`;
+      const matchedRowNum =
+        idToRowIndex.get(entry.id) ||
+        fingerprintToRowIndex.get(fingerprint);
+
+      if (matchedRowNum) {
+        const rowNo = matchedRowNum - 1;
+        const rowValues = this.formatEntryRow(entry, rowNo);
+        const updateRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A${matchedRowNum}:M${matchedRowNum}?valueInputOption=USER_ENTERED`,
+          {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ values: [rowValues] })
+          }
+        );
+
+        if (!updateRes.ok) {
+          const err = await updateRes.json().catch(() => ({}));
+          throw new Error(err.error?.message || `Gagal memperbarui baris ke-${matchedRowNum} di Google Sheet.`);
+        }
+        updatedCount++;
+      } else {
+        const nextRowNo = existingRows.length + rowsToAppend.length + 1;
+        rowsToAppend.push(this.formatEntryRow(entry, nextRowNo));
+      }
     }
 
-    const data = await res.json();
-    const updatedRows = data.updates?.updatedRows || entries.length;
-    const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    if (rowsToAppend.length > 0) {
+      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A:M:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+      const appendRes = await fetch(appendUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ values: rowsToAppend })
+      });
+
+      if (!appendRes.ok) {
+        const err = await appendRes.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Gagal mengirim data ke Google Sheet (HTTP ${appendRes.status})`);
+      }
+    }
+
+    const totalSynced = updatedCount + rowsToAppend.length;
+    const detailMsg =
+      updatedCount > 0 && rowsToAppend.length === 0
+        ? `Data logbook diperbarui di Google Sheet tab "${targetTab}" tanpa duplikat (${updatedCount} baris diperbarui).`
+        : updatedCount > 0 && rowsToAppend.length > 0
+        ? `Berhasil menyinkronkan ke tab "${targetTab}": ${rowsToAppend.length} baris baru & ${updatedCount} baris diperbarui (tanpa duplikat).`
+        : `Berhasil menambahkan ${rowsToAppend.length} baris logbook baru ke Google Sheet tab "${targetTab}".`;
 
     return {
       success: true,
-      message: `Berhasil menambahkan ${updatedRows} baris logbook ke Google Sheet tab "${targetTab}"!`,
-      rowCount: updatedRows,
+      message: detailMsg,
+      rowCount: totalSynced,
       spreadsheetUrl,
       tabName: targetTab
     };
   }
 
   /**
-   * Clears data rows (A2:Z) from the Google Sheet while preserving and formatting the header row (A1:L1).
+   * Clears data rows (A2:Z) from the Google Sheet while preserving and formatting the header row (A1:M1).
    */
   static async clearSheetDataRows(
     accessToken: string,
@@ -346,34 +446,9 @@ export class GoogleWorkspaceApi {
       throw new Error('Spreadsheet ID belum diatur.');
     }
 
-    // 1. Fetch metadata to get actual existing sheet tab names
-    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    });
+    const targetTab = await this.resolveTargetTab(accessToken, spreadsheetId, preferredTabName);
 
-    if (!metaRes.ok) {
-      const errJson = await metaRes.json().catch(() => ({}));
-      throw new Error(errJson.error?.message || `Gagal mengakses spreadsheet (HTTP ${metaRes.status})`);
-    }
-
-    const metadata = await metaRes.json();
-    const sheetsList: Array<{ properties: { sheetId: number; title: string } }> = metadata.sheets || [];
-
-    if (sheetsList.length === 0) {
-      throw new Error('Spreadsheet tidak memiliki lembar kerja (worksheet).');
-    }
-
-    let targetTab = preferredTabName;
-    const foundTab = sheetsList.find(s => s.properties.title.toLowerCase() === preferredTabName.toLowerCase());
-    if (foundTab) {
-      targetTab = foundTab.properties.title;
-    } else {
-      targetTab = sheetsList[0].properties.title;
-    }
-
-    // 2. Clear all data rows starting from row 2 (A2:Z)
+    // Clear all data rows starting from row 2 (A2:Z)
     const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A2:Z:clear`;
     const clearRes = await fetch(clearUrl, {
       method: 'POST',
@@ -389,9 +464,9 @@ export class GoogleWorkspaceApi {
       throw new Error(err.error?.message || `Gagal mengosongkan baris data spreadsheet (HTTP ${clearRes.status})`);
     }
 
-    // 3. Ensure Header row 1 is clean and properly formatted
+    // Ensure Header row 1 is clean and properly formatted
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:L1?valueInputOption=USER_ENTERED`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetTab)}!A1:M1?valueInputOption=USER_ENTERED`,
       {
         method: 'PUT',
         headers: {
@@ -399,29 +474,14 @@ export class GoogleWorkspaceApi {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          values: [
-            [
-              'No',
-              'Tanggal & Waktu',
-              'Tipe Logbook',
-              'Nama Peserta',
-              'Username',
-              'Kategori Aktivitas',
-              'Uraian Aktivitas',
-              'Pelajaran Diperoleh',
-              'Kendala Dihadapi & Solusi',
-              'Jumlah Foto',
-              'Status Kegiatan',
-              'Waktu Sinkronisasi'
-            ]
-          ]
+          values: [this.SHEET_HEADERS]
         })
       }
     );
 
     return {
       success: true,
-      message: `Seluruh isi data pada Google Sheet tab "${targetTab}" telah berhasil dikosongkan (baris judul/header standar tetap dipertahankan).`,
+      message: `Seluruh isi data pada Google Sheet tab "${targetTab}" telah berhasil dikosongkan (baris judul tetap dipertahankan).`,
       clearedTab: targetTab
     };
   }
